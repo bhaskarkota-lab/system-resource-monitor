@@ -1,85 +1,151 @@
+import os
+import time
+import platform
+import psutil
+
 from flask import Flask, render_template, jsonify
 from flask_socketio import SocketIO
-import psutil, platform, socket, time, threading
-from datetime import datetime
 
 app = Flask(__name__)
-socketio = SocketIO(app, async_mode="threading")
 
-psutil.cpu_percent(None)
-for p in psutil.process_iter():
-    try: p.cpu_percent(None)
-    except: pass
+socketio = SocketIO(
+    app,
+    async_mode="threading",
+    cors_allowed_origins="*"
+)
 
-last_net = psutil.net_io_counters()
-last_time = time.time()
+# Initialize CPU measurement
+psutil.cpu_percent(interval=None)
+psutil.cpu_percent(percpu=True, interval=None)
+
+previous_network = psutil.net_io_counters()
+previous_time = time.time()
+
+
+def get_metrics():
+    global previous_network, previous_time
+
+    cpu = psutil.cpu_percent(interval=None)
+    cores = psutil.cpu_percent(percpu=True)
+
+    memory = psutil.virtual_memory()
+    disk = psutil.disk_usage("/")
+
+    current_network = psutil.net_io_counters()
+    current_time = time.time()
+
+    elapsed = max(current_time - previous_time, 0.001)
+
+    download = (
+        current_network.bytes_recv - previous_network.bytes_recv
+    ) / elapsed
+
+    upload = (
+        current_network.bytes_sent - previous_network.bytes_sent
+    ) / elapsed
+
+    previous_network = current_network
+    previous_time = current_time
+
+    return {
+        "cpu": cpu,
+        "cores": cores,
+        "ram": memory.percent,
+        "ram_used": memory.used,
+        "ram_total": memory.total,
+        "available": memory.available,
+        "disk": disk.percent,
+        "disk_used": disk.used,
+        "disk_total": disk.total,
+        "down": download,
+        "up": upload,
+        "time": time.strftime("%H:%M:%S")
+    }
+
 
 @app.route("/")
-def home():
+def index():
     return render_template("index.html")
 
+
 @app.route("/api/system")
-def system():
+def system_info():
     return jsonify({
-        "hostname": socket.gethostname(),
+        "hostname": platform.node(),
         "os": platform.platform(),
-        "processor": platform.processor(),
-        "cores": psutil.cpu_count(),
-        "uptime": int(time.time()-psutil.boot_time())
+        "processor": platform.processor() or "Unknown",
+        "cpu_count": psutil.cpu_count(),
+        "uptime": str(
+            int(time.time() - psutil.boot_time())
+        ) + " seconds"
     })
+
 
 @app.route("/api/processes")
 def processes():
-    data=[]
-    for p in psutil.process_iter(["pid","name","memory_info"]):
-        try:
-            data.append({
-                "pid":p.info["pid"],
-                "name":p.info["name"] or "Unknown",
-                "memory":p.info["memory_info"].rss if p.info["memory_info"] else 0,
-                "cpu":p.cpu_percent(None),
-                "status":p.status()
-            })
-        except: pass
-    return jsonify(data)
+    result = []
 
-@app.route("/api/process/<int:pid>/terminate",methods=["POST"])
+    for process in psutil.process_iter(
+        ["pid", "name", "memory_info", "cpu_percent", "status"]
+    ):
+        try:
+            info = process.info
+
+            result.append({
+                "pid": info["pid"],
+                "name": info["name"] or "Unknown",
+                "cpu": info["cpu_percent"] or 0,
+                "memory": (
+                    info["memory_info"].rss / 1024 / 1024
+                    if info["memory_info"] else 0
+                ),
+                "status": info["status"] or "Unknown"
+            })
+
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            pass
+
+    return jsonify(result)
+
+
+@app.route("/api/process/<int:pid>/terminate", methods=["POST"])
 def terminate_process(pid):
     try:
-        p=psutil.Process(pid)
-        p.terminate()
-        return jsonify({"success":True})
-    except Exception as e:
-        return jsonify({"success":False,"error":str(e)}),400
+        process = psutil.Process(pid)
+        process.terminate()
 
-def monitor():
-    global last_net,last_time
+        return jsonify({
+            "message": "Termination requested"
+        })
+
+    except psutil.AccessDenied:
+        return jsonify({
+            "error": "Access denied"
+        }), 403
+
+    except psutil.NoSuchProcess:
+        return jsonify({
+            "error": "Process not found"
+        }), 404
+
+
+def monitoring_loop():
     while True:
         try:
-            now=time.time()
-            net=psutil.net_io_counters()
-            elapsed=max(now-last_time,.01)
-            ram=psutil.virtual_memory()
-            disk=psutil.disk_usage("C:\\\\")
-            socketio.emit("metrics",{
-                "cpu":psutil.cpu_percent(None),
-                "cores":psutil.cpu_percent(None,percpu=True),
-                "ram":ram.percent,
-                "ram_used":ram.used,
-                "ram_total":ram.total,
-                "available":ram.available,
-                "disk":disk.percent,
-                "disk_used":disk.used,
-                "disk_total":disk.total,
-                "down":max(net.bytes_recv-last_net.bytes_recv,0)/elapsed,
-                "up":max(net.bytes_sent-last_net.bytes_sent,0)/elapsed,
-                "time":datetime.now().strftime("%H:%M:%S")
-            })
-            last_net,last_time=net,now
-        except Exception as e: print(e)
+            metrics = get_metrics()
+            socketio.emit("metrics", metrics)
+        except Exception as error:
+            print("Monitoring error:", error)
+
         socketio.sleep(1)
 
-if __name__=="__main__":
-    threading.Thread(target=monitor,daemon=True).start()
-    print("Advanced Dashboard: http://127.0.0.1:5000")
-    socketio.run(app,host="127.0.0.1",port=5000)
+
+if __name__ == "__main__":
+    socketio.start_background_task(monitoring_loop)
+
+    socketio.run(
+        app,
+        host="0.0.0.0",
+        port=int(os.environ.get("PORT", 5000)),
+        debug=False
+    )
