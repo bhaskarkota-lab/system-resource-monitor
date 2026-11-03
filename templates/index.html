@@ -1,0 +1,135 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>System Resource Monitor</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+<link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+
+<div class="layout">
+<aside class="sidebar">
+    <div class="brand"><span class="brand-icon">◈</span> SysMonitor</div>
+    <div class="sidebar-label">MONITORING</div>
+
+    <button class="nav active" onclick="showPage('overview',this)">▦ Overview</button>
+    <button class="nav" onclick="showPage('cpuPage',this)">◉ CPU</button>
+    <button class="nav" onclick="showPage('memoryPage',this)">▤ Memory</button>
+    <button class="nav" onclick="showPage('processPage',this)">▥ Processes</button>
+    <button class="nav" onclick="showPage('networkPage',this)">⇅ Network</button>
+    <button class="nav" onclick="showPage('systemPage',this)">⚙ System</button>
+
+    <div class="sidebar-bottom">
+        <span class="live-dot"></span> System Online
+        <small>Windows Resource Monitor</small>
+    </div>
+</aside>
+
+<main class="content">
+<header class="topbar">
+    <div>
+        <h1 id="pageTitle">Overview</h1>
+        <p>Real-time system performance monitoring</p>
+    </div>
+    <div class="status-pill"><span class="live-dot"></span> LIVE</div>
+</header>
+
+<!-- OVERVIEW -->
+<section id="overview" class="page active">
+    <div class="cards">
+        <div class="card"><div class="card-title">CPU UTILIZATION</div><div class="big-number" id="cpuValue">0%</div><div class="progress"><div id="cpuBar"></div></div></div>
+        <div class="card"><div class="card-title">MEMORY UTILIZATION</div><div class="big-number" id="ramValue">0%</div><div class="progress"><div id="ramBar"></div></div></div>
+        <div class="card"><div class="card-title">DISK UTILIZATION</div><div class="big-number" id="diskValue">0%</div><div class="progress"><div id="diskBar"></div></div></div>
+        <div class="card"><div class="card-title">DOWNLOAD SPEED</div><div class="big-number" id="downValue">0 KB/s</div><small>Network download</small></div>
+        <div class="card"><div class="card-title">UPLOAD SPEED</div><div class="big-number" id="upValue">0 KB/s</div><small>Network upload</small></div>
+    </div>
+
+    <div class="panel">
+        <h2>Performance Overview</h2>
+        <canvas id="overviewChart"></canvas>
+    </div>
+    <div class="panel">
+        <h2>CPU Core Utilization</h2>
+        <div id="coreGrid" class="core-grid"></div>
+    </div>
+</section>
+
+<!-- CPU -->
+<section id="cpuPage" class="page">
+    <div class="cards">
+        <div class="card"><div class="card-title">TOTAL CPU USAGE</div><div class="big-number" id="cpuDetail">0%</div></div>
+        <div class="card"><div class="card-title">LOGICAL PROCESSORS</div><div class="big-number" id="coreCount">--</div></div>
+    </div>
+    <div class="panel"><h2>CPU Performance</h2><canvas id="cpuChart"></canvas></div>
+    <div class="panel"><h2>Individual CPU Cores</h2><div id="cpuCoreGrid" class="core-grid"></div></div>
+</section>
+
+<!-- MEMORY -->
+<section id="memoryPage" class="page">
+    <div class="cards">
+        <div class="card"><div class="card-title">MEMORY USAGE</div><div class="big-number" id="ramDetail">0%</div></div>
+        <div class="card"><div class="card-title">USED MEMORY</div><div class="big-number" id="ramUsed">--</div></div>
+        <div class="card"><div class="card-title">TOTAL MEMORY</div><div class="big-number" id="ramTotal">--</div></div>
+        <div class="card"><div class="card-title">AVAILABLE MEMORY</div><div class="big-number" id="ramAvailable">--</div></div>
+    </div>
+    <div class="panel"><h2>Memory Usage History</h2><canvas id="ramChart"></canvas></div>
+</section>
+
+<!-- PROCESSES -->
+<section id="processPage" class="page">
+    <div class="cards">
+        <div class="card"><div class="card-title">RUNNING PROCESSES</div><div class="big-number" id="processCount">--</div></div>
+    </div>
+    <div class="panel">
+        <div class="panel-heading">
+            <h2>Process Manager</h2>
+            <input id="processSearch" placeholder="Search processes..." oninput="renderProcesses()">
+        </div>
+        <div class="table-wrap">
+            <table>
+                <thead><tr>
+                    <th onclick="sortProcesses('name')">NAME ↕</th>
+                    <th onclick="sortProcesses('pid')">PID ↕</th>
+                    <th onclick="sortProcesses('cpu')">CPU % ↕</th>
+                    <th onclick="sortProcesses('memory')">MEMORY ↕</th>
+                    <th>STATUS</th><th>ACTION</th>
+                </tr></thead>
+                <tbody id="processTable"><tr><td colspan="6">Loading processes...</td></tr></tbody>
+            </table>
+        </div>
+    </div>
+</section>
+
+<!-- NETWORK -->
+<section id="networkPage" class="page">
+    <div class="cards">
+        <div class="card"><div class="card-title">DOWNLOAD</div><div class="big-number" id="networkDown">0 KB/s</div></div>
+        <div class="card"><div class="card-title">UPLOAD</div><div class="big-number" id="networkUp">0 KB/s</div></div>
+    </div>
+    <div class="panel"><h2>Network Traffic</h2><canvas id="networkChart"></canvas></div>
+</section>
+
+<!-- SYSTEM -->
+<section id="systemPage" class="page">
+    <div class="panel">
+        <h2>System Information</h2>
+        <div class="system-grid">
+            <div class="system-item"><span>Computer Name</span><strong id="hostname">--</strong></div>
+            <div class="system-item"><span>Operating System</span><strong id="os">--</strong></div>
+            <div class="system-item"><span>Processor</span><strong id="processor">--</strong></div>
+            <div class="system-item"><span>CPU Cores</span><strong id="sysCores">--</strong></div>
+            <div class="system-item"><span>System Uptime</span><strong id="uptime">--</strong></div>
+        </div>
+    </div>
+</section>
+
+<footer>System Resource Monitor · Local Windows Dashboard</footer>
+</main>
+</div>
+
+<script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
+</body>
+</html>

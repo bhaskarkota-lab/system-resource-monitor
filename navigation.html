@@ -1,0 +1,26 @@
+<header>
+<h1>? System Resource Monitor</h1>
+<p>Windows Performance Analytics</p>
+</header>
+
+<div class="layout">
+<nav class="sidebar">
+<button class="active" onclick="showPage('overview',this)">?? Overview</button>
+<button onclick="showPage('cpuPage',this)">? CPU</button>
+<button onclick="showPage('memoryPage',this)">?? Memory</button>
+<button onclick="showPage('processPage',this)">? Processes</button>
+<button onclick="showPage('networkPage',this)">?? Network</button>
+<button onclick="showPage('systemPage',this)">?? System</button>
+</nav>
+
+<main class="content">
+<section id="overview" class="page active">
+<h2>Overview</h2>
+</section>
+<section id="cpuPage" class="page"><h2>CPU Analytics</h2></section>
+<section id="memoryPage" class="page"><h2>Memory Analytics</h2></section>
+<section id="processPage" class="page"><h2>Process Manager</h2></section>
+<section id="networkPage" class="page"><h2>Network Analytics</h2></section>
+<section id="systemPage" class="page"><h2>System Information</h2></section>
+</main>
+</div>
