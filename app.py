@@ -247,6 +247,11 @@ def processes():
 @app.route("/api/process/<int:pid>/terminate", methods=["POST"])
 def terminate_process(pid):
 
+    if os.environ.get("RENDER", "").lower() == "true":
+        return jsonify({
+            "error": "Process termination is disabled on the hosted monitor."
+        }), 403
+
     with windows_lock:
         process_list = windows_data["processes"]
         last_update = windows_data["last_update"]
@@ -279,8 +284,15 @@ def monitoring_loop():
 
     while True:
         try:
-            metrics = get_metrics()
-            socketio.emit("metrics", metrics)
+            with windows_lock:
+                remote_metrics_active = (
+                    windows_data["metrics"]
+                    and windows_data["last_update"]
+                    and time.time() - windows_data["last_update"] < 15
+                )
+
+            if not remote_metrics_active:
+                socketio.emit("metrics", get_metrics())
 
         except Exception as error:
             print("Monitoring error:", error)

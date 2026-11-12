@@ -3,25 +3,54 @@ let labels=[],cpuHistory=[],ramHistory=[],diskHistory=[],downHistory=[],upHistor
 let processes=[],sortKey="cpu",sortDirection=-1;
 const charts={};
 
+function setConnectionStatus(connected){
+ const status=document.getElementById("connectionStatus");
+ if(!status)return;
+ status.classList.toggle("is-disconnected",!connected);
+ setText("connectionStatusText",connected?"LIVE":"RECONNECTING");
+ status.setAttribute("aria-label",connected?"Connected. Live system metrics.":"Disconnected. Attempting to reconnect.");
+}
+socket.on("connect",()=>setConnectionStatus(true));
+socket.on("disconnect",()=>setConnectionStatus(false));
+socket.on("connect_error",()=>setConnectionStatus(false));
+setConnectionStatus(socket.connected);
+
 function createChart(id,datasets){
  const el=document.getElementById(id);
  if(!el)return;
- charts[id]=new Chart(el,{type:"line",data:{labels:[],datasets:datasets.map(d=>({label:d.label,data:[],borderColor:d.color,backgroundColor:d.color+"22",fill:true,tension:.35,pointRadius:0,borderWidth:2}))},options:{responsive:true,maintainAspectRatio:false,animation:false,interaction:{intersect:false,mode:"index"},plugins:{legend:{labels:{color:"#9caac3"}}},scales:{x:{ticks:{color:"#71809d",maxTicksLimit:8},grid:{color:"#202b43"}},y:{beginAtZero:true,ticks:{color:"#71809d"},grid:{color:"#202b43"}}}}});
+ charts[id]=new Chart(el,{type:"line",data:{labels:[],datasets:datasets.map(d=>({label:d.label,data:[],borderColor:d.color,backgroundColor:d.color+"22",fill:true,tension:.35,pointRadius:0,borderWidth:2}))},options:{responsive:true,maintainAspectRatio:false,animation:{duration:220,easing:"easeOutQuart"},interaction:{intersect:false,mode:"index"},plugins:{legend:{labels:{color:"#B8CBB9",usePointStyle:true,pointStyle:"line",boxWidth:24,padding:18}},tooltip:{backgroundColor:"#0B1C13",titleColor:"#FAF5E9",bodyColor:"#FAF5E9",borderColor:"#315541",borderWidth:1,padding:12,displayColors:true}},scales:{x:{ticks:{color:"#B8CBB9",maxTicksLimit:8},grid:{color:"rgba(49,85,65,0.42)"}},y:{beginAtZero:true,ticks:{color:"#B8CBB9"},grid:{color:"rgba(49,85,65,0.42)"}}}}});
 }
-createChart("overviewChart",[{label:"CPU %",color:"#60a5fa"},{label:"RAM %",color:"#a78bfa"},{label:"Disk %",color:"#34d399"}]);
-createChart("cpuChart",[{label:"CPU %",color:"#60a5fa"}]);
-createChart("ramChart",[{label:"RAM %",color:"#a78bfa"}]);
-createChart("networkChart",[{label:"Download KB/s",color:"#60a5fa"},{label:"Upload KB/s",color:"#34d399"}]);
+createChart("overviewChart",[{label:"CPU %",color:"#ECA427"},{label:"RAM %",color:"#FF921C"},{label:"Disk %",color:"#FAF5E9"}]);
+createChart("cpuChart",[{label:"CPU %",color:"#ECA427"}]);
+createChart("ramChart",[{label:"RAM %",color:"#FF921C"}]);
+createChart("networkChart",[{label:"Download KB/s",color:"#ECA427"},{label:"Upload KB/s",color:"#FAF5E9"}]);
 
 function updateChart(id,series){
  const c=charts[id];if(!c)return;
  c.data.labels=labels.slice();
  c.data.datasets.forEach((d,i)=>d.data=series[i].slice());
- c.update("none");
+ c.update();
 }
 function fmtBytes(v){if(v==null)return "--";return (v/1024/1024/1024).toFixed(2)+" GB"}
 function setText(id,value){const e=document.getElementById(id);if(e)e.textContent=value}
 function setBar(id,value){const e=document.getElementById(id);if(e)e.style.width=Math.max(0,Math.min(100,value))+"%"}
+function updateRamWarning(value){
+ const state=value>90?"critical":value>80?"warning":"";
+ const message=state==="critical"?"High memory usage":state==="warning"?"Elevated memory usage":"";
+ const overviewCard=document.getElementById("ramValue").parentElement;
+ const detailCard=document.getElementById("ramDetail").parentElement;
+ [overviewCard,detailCard].forEach(card=>{
+  card.classList.toggle("ram-warning",state==="warning");
+  card.classList.toggle("ram-critical",state==="critical");
+ });
+ if(overviewCard.dataset.ramState!==state){
+  [document.getElementById("ramWarning"),document.getElementById("ramDetailWarning")].forEach(element=>{
+   element.textContent=message;
+   element.hidden=!message;
+  });
+  overviewCard.dataset.ramState=state;
+ }
+}
 
 socket.on("metrics",m=>{
  const cpu=Number(m.cpu)||0,ram=Number(m.ram)||0,disk=Number(m.disk)||0;
@@ -36,6 +65,7 @@ socket.on("metrics",m=>{
  setText("downValue",(down/1024).toFixed(1)+" KB/s");setText("upValue",(up/1024).toFixed(1)+" KB/s");
  setText("networkDown",(down/1024).toFixed(1)+" KB/s");setText("networkUp",(up/1024).toFixed(1)+" KB/s");
  setBar("cpuBar",cpu);setBar("ramBar",ram);setBar("diskBar",disk);
+ updateRamWarning(ram);
  setText("ramUsed",fmtBytes(m.ram_used));setText("ramTotal",fmtBytes(m.ram_total));setText("ramAvailable",fmtBytes(m.available));
  updateChart("overviewChart",[cpuHistory,ramHistory,diskHistory]);
  updateChart("cpuChart",[cpuHistory]);updateChart("ramChart",[ramHistory]);
